@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TV Show Recommender</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>TV Show Recommender</h1>
+        <p class="subtitle">Add your favorite shows, then get personalized recommendations.</p>
+
+        <!-- Search Section -->
+        <div class="search-section">
+            <div class="search-wrapper">
+                <input type="text" id="search-input" placeholder="Search for a TV show..." autocomplete="off">
+                <div id="search-results" class="search-results hidden"></div>
+            </div>
+        </div>
+
+        <!-- Favorites Section -->
+        <div class="section">
+            <h2>Your Favorites <span id="fav-count" class="badge">0</span></h2>
+            <div id="favorites" class="card-grid">
+                <p id="no-favorites" class="empty-message">Search and add shows above to get started.</p>
+            </div>
+            <button id="recommend-btn" class="btn-primary hidden" onclick="getRecommendations()">
+                Get Recommendations
+            </button>
+        </div>
+
+        <!-- Recommendations Section -->
+        <div id="recommendations-section" class="section hidden">
+            <h2>Recommendations</h2>
+            <div id="loading" class="hidden">
+                <div class="spinner"></div>
+                <p>Finding shows you might like...</p>
+            </div>
+            <div id="recommendations" class="card-grid"></div>
+        </div>
+    </div>
+
+    <script>
+        const favorites = new Map(); // id -> show object
+        let searchTimeout = null;
+
+        const searchInput = document.getElementById('search-input');
+        const searchResults = document.getElementById('search-results');
+        const favoritesGrid = document.getElementById('favorites');
+        const favCount = document.getElementById('fav-count');
+        const noFavorites = document.getElementById('no-favorites');
+        const recommendBtn = document.getElementById('recommend-btn');
+        const recsSection = document.getElementById('recommendations-section');
+        const recsGrid = document.getElementById('recommendations');
+        const loading = document.getElementById('loading');
+
+        // Debounced search
+        searchInput.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            const query = searchInput.value.trim();
+            if (query.length < 2) {
+                searchResults.classList.add('hidden');
+                return;
+            }
+            searchTimeout = setTimeout(() => searchShows(query), 300);
+        });
+
+        // Close search results when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.search-wrapper')) {
+                searchResults.classList.add('hidden');
+            }
+        });
+
+        async function searchShows(query) {
+            try {
+                const resp = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const shows = await resp.json();
+                renderSearchResults(shows);
+            } catch (err) {
+                console.error('Search failed:', err);
+            }
+        }
+
+        function renderSearchResults(shows) {
+            if (!shows.length) {
+                searchResults.innerHTML = '<div class="search-item">No results found</div>';
+                searchResults.classList.remove('hidden');
+                return;
+            }
+            searchResults.innerHTML = shows.slice(0, 10).map(show => `
+                <div class="search-item" onclick='addFavorite(${JSON.stringify(show).replace(/'/g, "&#39;")})'>
+                    <img src="${show.image || ''}" alt="" class="search-thumb" onerror="this.style.display='none'">
+                    <div class="search-info">
+                        <strong>${escapeHtml(show.name)}</strong>
+                        <span class="search-meta">
+                            ${show.genres.join(', ')}
+                            ${show.rating ? ' &middot; ' + show.rating + '/10' : ''}
+                            ${show.network ? ' &middot; ' + escapeHtml(show.network) : ''}
+                        </span>
+                    </div>
+                </div>
+            `).join('');
+            searchResults.classList.remove('hidden');
+        }
+
+        function addFavorite(show) {
+            if (favorites.has(show.id)) return;
+            favorites.set(show.id, show);
+            searchResults.classList.add('hidden');
+            searchInput.value = '';
+            renderFavorites();
+        }
+
+        function removeFavorite(id) {
+            favorites.delete(id);
+            renderFavorites();
+        }
+
+        function renderFavorites() {
+            const count = favorites.size;
+            favCount.textContent = count;
+
+            if (count === 0) {
+                noFavorites.classList.remove('hidden');
+                recommendBtn.classList.add('hidden');
+                favoritesGrid.innerHTML = '';
+                favoritesGrid.appendChild(noFavorites);
+                return;
+            }
+
+            noFavorites.classList.add('hidden');
+            recommendBtn.classList.remove('hidden');
+
+            favoritesGrid.innerHTML = '';
+            for (const [id, show] of favorites) {
+                const card = document.createElement('div');
+                card.className = 'card favorite-card';
+                card.innerHTML = `
+                    <button class="remove-btn" onclick="removeFavorite(${id})" title="Remove">&times;</button>
+                    ${show.image ? `<img src="${show.image}" alt="${escapeHtml(show.name)}" class="card-image">` : '<div class="card-image placeholder"></div>'}
+                    <div class="card-body">
+                        <h3 class="card-title">${escapeHtml(show.name)}</h3>
+                        <div class="card-meta">${show.genres.join(', ')}</div>
+                        ${show.rating ? `<div class="card-rating">${show.rating}/10</div>` : ''}
+                    </div>
+                `;
+                favoritesGrid.appendChild(card);
+            }
+        }
+
+        async function getRecommendations() {
+            const ids = Array.from(favorites.keys());
+            if (!ids.length) return;
+
+            recsSection.classList.remove('hidden');
+            loading.classList.remove('hidden');
+            recsGrid.innerHTML = '';
+            recommendBtn.disabled = true;
+            recommendBtn.textContent = 'Loading...';
+
+            try {
+                const resp = await fetch('/api/recommend', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({show_ids: ids})
+                });
+                const recs = await resp.json();
+
+                if (recs.error) {
+                    recsGrid.innerHTML = `<p class="empty-message">Error: ${escapeHtml(recs.error)}</p>`;
+                } else {
+                    renderRecommendations(recs);
+                }
+            } catch (err) {
+                recsGrid.innerHTML = `<p class="empty-message">Failed to get recommendations.</p>`;
+                console.error(err);
+            } finally {
+                loading.classList.add('hidden');
+                recommendBtn.disabled = false;
+                recommendBtn.textContent = 'Get Recommendations';
+            }
+        }
+
+        function renderRecommendations(recs) {
+            if (!recs.length) {
+                recsGrid.innerHTML = '<p class="empty-message">No recommendations found. Try adding more shows.</p>';
+                return;
+            }
+            recsGrid.innerHTML = recs.map(show => `
+                <div class="card rec-card">
+                    ${show.image ? `<img src="${show.image}" alt="${escapeHtml(show.name)}" class="card-image">` : '<div class="card-image placeholder"></div>'}
+                    <div class="card-body">
+                        <div class="score-badge">${Math.round(show.score * 100)}% match</div>
+                        <h3 class="card-title">${escapeHtml(show.name)}</h3>
+                        <div class="card-meta">${show.genres.join(', ')}</div>
+                        ${show.rating ? `<div class="card-rating">${show.rating}/10</div>` : ''}
+                        ${show.network ? `<div class="card-network">${escapeHtml(show.network)}</div>` : ''}
+                        ${show.shared_genres.length ? `<div class="card-reason">Shared genres: ${show.shared_genres.join(', ')}</div>` : ''}
+                        ${show.summary ? `<p class="card-summary">${escapeHtml(show.summary).substring(0, 150)}...</p>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
