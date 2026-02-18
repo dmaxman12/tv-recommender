@@ -38,10 +38,10 @@ Content-based filtering combining four similarity signals:
 
 | Signal | Weight | Method |
 |--------|--------|--------|
-| Genre similarity | 40% | Jaccard similarity of genre sets |
-| Text similarity | 30% | TF-IDF cosine similarity of show summaries |
-| Network match | 15% | Binary — 1.0 if same network, 0.0 otherwise |
-| Rating proximity | 15% | Normalized distance: `1 - |a - b| / 10` |
+| Genre similarity | 70% | Jaccard similarity of genre sets |
+| Text similarity | 10% | TF-IDF cosine similarity of show summaries |
+| Network match | 10% | Binary — 1.0 if same network, 0.0 otherwise |
+| Rating proximity | 10% | Normalized distance: `1 - |a - b| / 10` |
 
 - Candidate pool built by searching TVmaze for each genre keyword from favorites plus show name terms
 - Favorites are excluded from results

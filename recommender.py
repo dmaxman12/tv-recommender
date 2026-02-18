@@ -4,10 +4,10 @@ from sklearn.metrics.pairwise import cosine_similarity
 from tvmaze import search_shows
 
 # Weights for each similarity signal
-GENRE_WEIGHT = 0.40
-TEXT_WEIGHT = 0.30
-NETWORK_WEIGHT = 0.15
-RATING_WEIGHT = 0.15
+GENRE_WEIGHT = 0.70
+TEXT_WEIGHT = 0.10
+NETWORK_WEIGHT = 0.10
+RATING_WEIGHT = 0.10
 
 
 def _genre_similarity(genres_a, genres_b):
